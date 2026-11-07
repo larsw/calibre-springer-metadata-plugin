@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# License: GPLv3
+# License: Apache-2.0
 
 """
 Springer metadata source plugin for calibre.
@@ -25,7 +25,7 @@ from urllib.parse import quote, urlencode
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.sources.base import Option, Source
 
-__license__ = 'GPL v3'
+__license__ = 'Apache-2.0'
 
 CROSSREF_API = 'https://api.crossref.org/works'
 SPRINGER_META_API = 'https://api.springernature.com/meta/v2/json'
