@@ -1,2 +1,4 @@
 Springer-Metadata.zip
 
+samples/*
+!samples/README.md
