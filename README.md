@@ -2,7 +2,8 @@
 
 A calibre metadata source plugin for books published by Springer Nature
 (Springer, Apress, Palgrave Macmillan, Birkhäuser, Springer Singapore and other imprints).
-It downloads metadata and high-resolution covers.
+It downloads metadata and high-resolution covers. The only API it calls is Crossref's, which
+needs no API key.
 
 ## Where the data comes from
 
@@ -10,11 +11,12 @@ It downloads metadata and high-resolution covers.
 |---|---|---|
 | Title, subtitle, authors (editors for edited volumes), publisher, publication date, ISBN, DOI, book series, language | Records Springer deposits with [Crossref](https://api.crossref.org), limited to Springer Nature (Crossref member 297) | No |
 | Cover (about 827×1250 px) | Springer's cover CDN, `media.springernature.com` | No |
-| Subject tags (Springer's subject classification) and exact online publication date | [Springer Nature Meta API v2](https://dev.springernature.com/docs/api-endpoints/meta-api) | Yes, free |
-| Description (blurb) | Not available: the Meta API indexes chapters only, and Crossref rarely has book abstracts | |
+| Description (blurb) | Only when Crossref has a book abstract, which is rare | |
+| Subject tags | Not available: Crossref book records carry no subject classification | |
 
-The plugin doesn't scrape `link.springer.com`, because those pages sit behind a
-JavaScript bot challenge.
+The plugin doesn't use the Springer Nature Meta API (`api.springernature.com`), because its
+keys were blocked quickly in practice. It also doesn't scrape `link.springer.com`, because
+those pages sit behind a JavaScript bot challenge.
 
 ## Install
 
@@ -32,10 +34,6 @@ To uninstall: `calibre-customize -r Springer`.
 
 In *Preferences → Metadata download*, select **Springer** and click *Configure selected source*:
 
-- **Springer Nature API key**: optional. Get a free key at <https://dev.springernature.com> to
-  add Springer subject tags and exact publication dates. The plugin uses one request per book
-  found. The free plan allows 500 requests per day, so a title search that returns 5 candidates
-  costs 5 requests.
 - **Maximum number of results**: number of matches for title/author searches (default 5).
 - **Preferred ISBN**: eBook ISBN (default) or print ISBN. If you search with an ISBN, the plugin
   keeps that ISBN.
@@ -60,7 +58,7 @@ right record. It also understands `link.springer.com/book/...` URLs.
 ./build.sh test
 ```
 
-This runs calibre's identify test harness against live Crossref and Springer servers.
+This runs calibre's identify test harness against the live Crossref API.
 
 The plugin throttles requests and retries on HTTP 429/503. If you hit the
 Crossref rate limit anyway, set a contact email.

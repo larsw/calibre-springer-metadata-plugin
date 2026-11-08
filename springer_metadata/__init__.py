@@ -7,10 +7,9 @@ Springer metadata source plugin for calibre.
 Metadata comes from the bibliographic records Springer Nature deposits with
 Crossref (api.crossref.org, Crossref member 297 = Springer Science and
 Business Media, which also covers Apress, Palgrave Macmillan, Birkhäuser,
-Springer Singapore, ...). If a Springer Nature API key is configured, subject
-tags and exact publication dates are added from the official Springer Nature
-Meta API (api.springernature.com). Covers are downloaded from Springer's cover
-image CDN (media.springernature.com).
+Springer Singapore, ...). Crossref is the only API used; no API key is needed.
+Covers are downloaded from Springer's public cover image CDN
+(media.springernature.com).
 """
 
 import hashlib
@@ -28,7 +27,6 @@ from calibre.ebooks.metadata.sources.base import Option, Source
 __license__ = 'Apache-2.0'
 
 CROSSREF_API = 'https://api.crossref.org/works'
-SPRINGER_META_API = 'https://api.springernature.com/meta/v2/json'
 COVER_URL = 'https://media.springernature.com/full/springer-static/cover-hires/book/{}'
 BOOK_URL = 'https://link.springer.com/book/{}'
 
@@ -43,7 +41,7 @@ BOOK_TYPES = ('book', 'monograph', 'edited-book', 'reference-book')
 PLACEHOLDER_COVER_SHA1 = {'604d60ab47ebb9c1f27e993841615a05063f2be7'}
 MIN_COVER_BYTES = 10000
 
-PLUGIN_VERSION = (1, 0, 0)
+PLUGIN_VERSION = (1, 1, 0)
 
 MIN_REQUEST_INTERVAL = 0.5  # seconds between API requests
 MAX_RETRIES = 3
@@ -74,8 +72,7 @@ class Springer(Source):
     description = _(
         'Downloads metadata and covers for books published by Springer Nature '
         '(Springer, Apress, Palgrave Macmillan, Birkhäuser, ...). Metadata is '
-        'taken from the records Springer deposits with Crossref; subject tags '
-        'and exact publication dates need a free Springer Nature API key.')
+        'taken from the records Springer deposits with Crossref.')
     author = 'Springer metadata source contributors'
     version = PLUGIN_VERSION
     minimum_calibre_version = (6, 0, 0)
@@ -83,7 +80,7 @@ class Springer(Source):
     capabilities = frozenset(['identify', 'cover'])
     touched_fields = frozenset([
         'title', 'authors', 'publisher', 'pubdate', 'series', 'languages',
-        'comments', 'tags', 'identifier:isbn', 'identifier:doi',
+        'comments', 'identifier:isbn', 'identifier:doi',
     ])
     has_html_comments = True
     supports_gzip_transfer_encoding = True
@@ -91,11 +88,6 @@ class Springer(Source):
     prefer_results_with_isbn = True
 
     options = (
-        Option('api_key', 'string', '', _('Springer Nature API key:'),
-               _('Optional. A free key from https://dev.springernature.com '
-                 'adds Springer subject classifications as tags and the exact '
-                 'online publication date, from the Springer Nature Meta API '
-                 '(one request per book; the free plan allows 500 per day).')),
         Option('max_results', 'number', 5, _('Maximum number of results:'),
                _('Maximum number of matches to return when searching by '
                  'title and author.')),
@@ -127,7 +119,7 @@ class Springer(Source):
         br = self.browser
         br.addheaders = [('User-Agent', self._user_agent()),
                          ('Accept', 'application/json')]
-        log.info('Springer: fetching', url.replace(self.prefs['api_key'] or '\0', '***'))
+        log.info('Springer: fetching', url)
         deadline = time.monotonic() + timeout
         for attempt in range(MAX_RETRIES + 1):
             # Crossref's public pool allows only a few requests per second and
@@ -294,62 +286,6 @@ class Springer(Source):
         if mi.isbn:
             mi.isbn = check_isbn(mi.isbn)
 
-    # Springer Nature Meta API enrichment {{{
-
-    def _enrich(self, mi, log, timeout):
-        # The Meta API indexes book *chapters*, not books, so there is no book
-        # description to be had. Every chapter record does carry the book-level
-        # Springer subject classification and the exact online publication
-        # date, so a single record is enough. Notes on the free plan (checked
-        # 2026-11): isbn: queries only match the hyphenated form, title:
-        # queries and page sizes above 25 are premium features.
-        key = (self.prefs['api_key'] or '').strip()
-        doi = mi.get_identifiers().get('doi')
-        if not key or not doi:
-            return
-        hyphenated_eisbn = doi.split('/', 1)[1]
-        if not re.match(r'^97[89]-[\d-]+[\dX]$', hyphenated_eisbn):
-            return
-        try:
-            data = self._get_json(SPRINGER_META_API + '?' + urlencode(
-                {'q': f'isbn:{hyphenated_eisbn}', 'p': '1', 'api_key': key}), timeout, log)
-        except Exception as e:
-            code = getattr(e, 'code', None)
-            if code == 404:
-                log.info('Springer: no Meta API records for', doi)
-            elif code in (401, 403):
-                log.warning(f'Springer: Meta API refused the request (HTTP {code}), check the API key')
-            else:
-                log.warning('Springer: Meta API request failed:', code or e)
-            return
-        records = data.get('records') or []
-        if not records:
-            log.info('Springer: no Meta API records for', doi)
-            return
-        rec = records[0]
-
-        tags = []
-        for t in rec.get('subjects') or ():
-            if not isinstance(t, str):
-                continue
-            # "Linguistics, general" -> "Linguistics" (calibre tags can't
-            # contain commas, and it would duplicate a plain "Linguistics").
-            t = re.sub(r',\s*general$', '', t.strip(), flags=re.I)
-            if t and t not in tags:
-                tags.append(t)
-        if tags:
-            mi.tags = tags
-
-        m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', rec.get('onlineDate') or '')
-        if m is not None:
-            from calibre.utils.date import utc_tz
-            try:
-                mi.pubdate = datetime(*map(int, m.groups()), 12, tzinfo=utc_tz)
-            except ValueError:
-                pass
-
-    # }}}
-
     def identify(self, log, result_queue, abort, title=None, authors=None,
                  identifiers={}, timeout=30):
         doi = identifiers.get('doi')
@@ -384,7 +320,6 @@ class Springer(Source):
             if abort.is_set():
                 break
             mi = self._item_to_metadata(item, isbn, log)
-            self._enrich(mi, log, timeout)
             mi.source_relevance = relevance
             self.clean_downloaded_metadata(mi)
             result_queue.put(mi)
